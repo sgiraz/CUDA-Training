@@ -185,12 +185,18 @@ int main(int argc, char *argv[]) {
     printf("Ok multiplication completed with \x1b[32msuccess\x1b[0m!\n\n");
     printf("Speedup: %f\n", msTime_seq/msTime);
     
+    free(h_M);
+    free(h_N);
+    free(h_P);
+    free(h_C);
+    
     return 0;
     
 Error:
     free(h_M);
     free(h_N);
     free(h_P);
+    free(h_C);
     
     return -1;
 }

@@ -12,10 +12,11 @@
 #include <math.h>
 
 #define CHECK_ERROR(call) { \
-	cudaError_t err = call; \
-	if (err != cudaSuccess) { \
-		printf("%s in %s at line %d\n", cudaGetErrorString(err), __FILE__, __LINE__); EXIT_FAILURE; \
-	} \
+cudaError_t err = call; \
+if (err != cudaSuccess) { \
+printf("%s in %s at line %d\n", cudaGetErrorString(err), __FILE__, __LINE__); \
+exit(err); \
+} \
 }
 
 
@@ -55,7 +56,7 @@ void vecAdd(float *h_A, float *h_B, float *h_C, int n) {
 
 	//2. Kernel launch code - to have the device to perform the actual vector addition
 	// Kernel invocation with 256 threads
-	dim3 dimGrid = (ceil(n / 256.0),1,1);
+	dim3 dimGrid(ceil(n / 256.0),1,1);
 	dim3 dimBlock((256.0),1,1);
 	vecAddKernel<<<dimGrid, dimBlock>>>(d_A, d_B, d_C, n);
 
