@@ -23,11 +23,11 @@
 __constant__ float M[MAX_MASK_WIDTH][MAX_MASK_WIDTH];
 
 #define CHECK_ERROR(call) { \
-    cudaError_t err = call; \
-    if (err != cudaSuccess) { \
-        printf("%s in %s at line %d\n", cudaGetErrorString(err), __FILE__, __LINE__); \
-        exit(err); \
-    } \
+cudaError_t err = call; \
+if (err != cudaSuccess) { \
+printf("%s in %s at line %d\n", cudaGetErrorString(err), __FILE__, __LINE__); \
+exit(err); \
+} \
 }
 
 void printMatrix(float *A, int height, int width) {
@@ -73,7 +73,7 @@ void convolution_2D_basic_kernel(float *N, float *P, int height, int width) {
         }
         P[ Row * width + Col] = Pvalue;
     }
-     
+    
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,7 +99,7 @@ float convolution_2D_basic(float *h_N, float h_M[MASK_WIDTH][MASK_WIDTH], float 
     
     // Inform CUDA runtime that the data being copied in to the constant memory
     // will not be changed during the kernel execution
-    cudaMemcpyToSymbol(M, h_M, sizeof(sizeMask_Width));
+    cudaMemcpyToSymbol(M, h_M, sizeMask_Width * sizeof(float));
     
     //2. Kernel launch code - to have the device to perform the actual convolution
     // ------------------- CUDA COMPUTATION ---------------------------
@@ -205,15 +205,15 @@ int main(int argc, char **argv) {
     printf("HostTime: %f\n", msTime_seq);
     
     /*
-    printf("----------------- INPUT MATRIX -----------------\n");
-    printMatrix(h_N, rows, cols);
-    
-    printf("---------- MATRIX RESULT - SEQUENTIAL ----------\n");
-    printMatrix(h_PS, rows, cols);
-    
-    
-    printf("---------- MATRIX RESULT - PARALLEL ------------\n");
-    printMatrix(h_P, rows, cols);
+     printf("----------------- INPUT MATRIX -----------------\n");
+     printMatrix(h_N, rows, cols);
+     
+     printf("---------- MATRIX RESULT - SEQUENTIAL ----------\n");
+     printMatrix(h_PS, rows, cols);
+     
+     
+     printf("---------- MATRIX RESULT - PARALLEL ------------\n");
+     printMatrix(h_P, rows, cols);
      */
     
     
