@@ -1,5 +1,6 @@
 /*
  * EXAMPLE OF PATTERN CONVOLUTION CHAPTER 7
+ * Introducing L2 cache
  */
 
 #include <cuda.h>
@@ -19,30 +20,46 @@ if (err != cudaSuccess) { \
     } \
 }
 
-// compute vector convoluiton
+#define TILE_SIZE 128
+#define MAX_MASK_WIDTH 10
+__constant__ float M[MAX_MASK_WIDTH];
+
+// compute vector convolution
 // each thread performs one pair-wise convolution
 __global__
-void convolution_1D_basic_kernel(float *d_N, float *d_M, float *d_P, int Mask_Width, int Width){
+void convolution_1D_tiled_kernel(float *N, float *P, int Mask_Width, int Width){
+    __shared__ float N_ds[TILE_SIZE];
     int i = blockDim.x * blockIdx.x + threadIdx.x;
-    int N_start_point = i - Mask_Width/2;
+
+    N_ds[threadIdx.x] = N[i];
     
+    __syncthreads();
+    
+    int This_tile_start_point = blockIdx.x * blockDim.x;
+    int Next_tile_start_point = (blockIdx.x+1) * blockDim.x;
+    int N_start_point = i - (Mask_Width/2);
     float Pvalue = 0;
     
-    if (i < Width) {
-        for (int j = 0; j < Mask_Width; j++) {
-            if (N_start_point + j >= 0 && N_start_point + j < Width) {
-                Pvalue += d_N[N_start_point + j] * d_M[j];
+    for (int j = 0; j < Mask_Width; j++) {
+        int N_index = N_start_point + j;
+        // check if we are inner the input array
+        if (N_index >= 0 && N_index < Width) {
+            // check if we are inner the current block
+            if ((N_index >= This_tile_start_point) && N_index < Next_tile_start_point) {
+                Pvalue += N_ds[threadIdx.x + j - (Mask_Width/2)] * M[j];
+            }
+            else{
+                Pvalue += N[N_index] * M[j]; // N is hopefully in L2 cache
             }
         }
-        d_P[i] = Pvalue;
     }
+    P[i] = Pvalue;
 }
 
-float convolution_1D_basic(float *h_N, float *h_M, float *h_P, int Mask_Width, int Width) {
+float convolution_1D_tiled(float *h_N, float *h_M, float *h_P, int Mask_Width, int Width) {
     
-    float *d_N, *d_M, *d_P;
+    float *d_N, *d_P;
     int sizeWidth = Width*sizeof(float);
-    int sizeMask_Width = Mask_Width*sizeof(float);
     
     cudaEvent_t startTimeCuda, stopTimeCuda;
     cudaEventCreate(&startTimeCuda);
@@ -51,19 +68,21 @@ float convolution_1D_basic(float *h_N, float *h_M, float *h_P, int Mask_Width, i
     //1. Allocate global memory on the device for N, M and P
     CHECK_ERROR(cudaMalloc((void**)&d_N, sizeWidth));
     CHECK_ERROR(cudaMalloc((void**)&d_P, sizeWidth));
-    CHECK_ERROR(cudaMalloc((void**)&d_M, sizeMask_Width));
     
-    // copy N and M to device memory
+    // copy N to device memory
     cudaMemcpy(d_N, h_N, sizeWidth, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_M, h_M, sizeMask_Width, cudaMemcpyHostToDevice);
+    
+    // Inform CUDA runtime that the data being copied into the constant memory
+    // will not be changed during the kernel execution
+    cudaMemcpyToSymbol(M, h_M, Mask_Width*sizeof(float));
     
     //2. Kernel launch code - to have the device to perform the actual convolution
     // ------------------- CUDA COMPUTATION ---------------------------
     cudaEventRecord(startTimeCuda, 0);
     
-    dim3 dimGrid(ceil((float)Width / (float)Mask_Width),1,1);
-    dim3 dimBlock(Mask_Width,1,1);
-    convolution_1D_basic_kernel<<<dimGrid, dimBlock>>>(d_N, d_M, d_P, Mask_Width, Width);
+    dim3 dimGrid(ceil((float)Width / (float)TILE_SIZE),1,1);
+    dim3 dimBlock(TILE_SIZE,1,1);
+    convolution_1D_tiled_kernel<<<dimGrid, dimBlock>>>(d_N, d_P, Mask_Width, Width);
     
     cudaEventRecord(stopTimeCuda, 0);
     
@@ -78,7 +97,6 @@ float convolution_1D_basic(float *h_N, float *h_M, float *h_P, int Mask_Width, i
     
     // Free device vectors
     cudaFree(d_N);
-    cudaFree(d_M);
     cudaFree(d_P);
     
     return msTime;
@@ -92,15 +110,12 @@ void printArray(float *A, int size){
 }
 
 void sequentialConv(float *h_N, float *h_M, float *h_PS, int n, int Mask_Width){
-    float Pvalue;
     for (int i = 0, pos; i < n; i++) {
-        Pvalue = 0.0f;
         pos = i - Mask_Width/2;
         for (int j = 0; j < Mask_Width; j++) {
             if (j + pos >= 0 && j + pos < n)
-                Pvalue += h_N[j + pos] * h_M[j];
+                h_PS[i] += h_N[j + pos] * h_M[j];
         }
-        h_PS[i] = Pvalue;
     }
 }
 
@@ -110,7 +125,7 @@ int main(void) {
     float *h_P, *h_N, *h_PS;
     const float val = (float)1/(float)2;
     const int n = 100000;
-    const int Mask_Width = 3;
+    const int Mask_Width = 5;
     float h_M[] = {-val, 0, val}; // the mask
     float msTime, msTime_seq;
     cudaEvent_t startTimeCuda, stopTimeCuda;
@@ -127,12 +142,14 @@ int main(void) {
     // set initial values for vectors
     srand(time(NULL));
     for (int i = 0; i < n; i++) {
+        h_P[i] = 0.0;
+        h_PS[i] = 0.0;
         h_N[i] = i + 1;
         //h_N[i] = ((float)rand() / (float)(RAND_MAX)) * 100;
     }
     
     // -------------------------- parrallel convolution -----------------------------------
-    msTime = convolution_1D_basic(h_N, h_M, h_P, Mask_Width, n);
+    msTime = convolution_1D_tiled(h_N, h_M, h_P, Mask_Width, n);
     
     // -------------------------- perform sequential convolution --------------------------
     cudaEventRecord(startTimeCuda, 0);

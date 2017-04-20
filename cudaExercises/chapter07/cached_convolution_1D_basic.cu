@@ -19,10 +19,13 @@ if (err != cudaSuccess) { \
     } \
 }
 
+#define MAX_MASK_WIDTH 10
+__constant__ float M[MAX_MASK_WIDTH];
+
 // compute vector convoluiton
 // each thread performs one pair-wise convolution
 __global__
-void convolution_1D_basic_kernel(float *d_N, float *d_M, float *d_P, int Mask_Width, int Width){
+void convolution_1D_basic_kernel(float *N, float *P, int Mask_Width, int Width){
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     int N_start_point = i - Mask_Width/2;
     
@@ -31,18 +34,17 @@ void convolution_1D_basic_kernel(float *d_N, float *d_M, float *d_P, int Mask_Wi
     if (i < Width) {
         for (int j = 0; j < Mask_Width; j++) {
             if (N_start_point + j >= 0 && N_start_point + j < Width) {
-                Pvalue += d_N[N_start_point + j] * d_M[j];
+                Pvalue += N[N_start_point + j] * M[j];
             }
         }
-        d_P[i] = Pvalue;
+        P[i] = Pvalue;
     }
 }
 
 float convolution_1D_basic(float *h_N, float *h_M, float *h_P, int Mask_Width, int Width) {
     
-    float *d_N, *d_M, *d_P;
+    float *d_N, *d_P;
     int sizeWidth = Width*sizeof(float);
-    int sizeMask_Width = Mask_Width*sizeof(float);
     
     cudaEvent_t startTimeCuda, stopTimeCuda;
     cudaEventCreate(&startTimeCuda);
@@ -51,11 +53,13 @@ float convolution_1D_basic(float *h_N, float *h_M, float *h_P, int Mask_Width, i
     //1. Allocate global memory on the device for N, M and P
     CHECK_ERROR(cudaMalloc((void**)&d_N, sizeWidth));
     CHECK_ERROR(cudaMalloc((void**)&d_P, sizeWidth));
-    CHECK_ERROR(cudaMalloc((void**)&d_M, sizeMask_Width));
     
-    // copy N and M to device memory
+    // copy N to device memory
     cudaMemcpy(d_N, h_N, sizeWidth, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_M, h_M, sizeMask_Width, cudaMemcpyHostToDevice);
+    
+    // Inform CUDA runtime that the data being copied in to the constant memory
+    // will not be changed during the kernel execution
+    cudaMemcpyToSymbol(M, h_M, Mask_Width*sizeof(float));
     
     //2. Kernel launch code - to have the device to perform the actual convolution
     // ------------------- CUDA COMPUTATION ---------------------------
@@ -63,7 +67,7 @@ float convolution_1D_basic(float *h_N, float *h_M, float *h_P, int Mask_Width, i
     
     dim3 dimGrid(ceil((float)Width / (float)Mask_Width),1,1);
     dim3 dimBlock(Mask_Width,1,1);
-    convolution_1D_basic_kernel<<<dimGrid, dimBlock>>>(d_N, d_M, d_P, Mask_Width, Width);
+    convolution_1D_basic_kernel<<<dimGrid, dimBlock>>>(d_N, d_P, Mask_Width, Width);
     
     cudaEventRecord(stopTimeCuda, 0);
     
@@ -78,7 +82,6 @@ float convolution_1D_basic(float *h_N, float *h_M, float *h_P, int Mask_Width, i
     
     // Free device vectors
     cudaFree(d_N);
-    cudaFree(d_M);
     cudaFree(d_P);
     
     return msTime;
@@ -92,15 +95,12 @@ void printArray(float *A, int size){
 }
 
 void sequentialConv(float *h_N, float *h_M, float *h_PS, int n, int Mask_Width){
-    float Pvalue;
     for (int i = 0, pos; i < n; i++) {
-        Pvalue = 0.0f;
         pos = i - Mask_Width/2;
         for (int j = 0; j < Mask_Width; j++) {
             if (j + pos >= 0 && j + pos < n)
-                Pvalue += h_N[j + pos] * h_M[j];
+                h_PS[i] += h_N[j + pos] * h_M[j];
         }
-        h_PS[i] = Pvalue;
     }
 }
 
@@ -127,6 +127,8 @@ int main(void) {
     // set initial values for vectors
     srand(time(NULL));
     for (int i = 0; i < n; i++) {
+        h_P[i] = 0.0;
+        h_PS[i] = 0.0;
         h_N[i] = i + 1;
         //h_N[i] = ((float)rand() / (float)(RAND_MAX)) * 100;
     }
