@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define SECTION_SIZE 8192 //change it also for inputSize in main
+#define SECTION_SIZE 4096
 #define BLOCK_DIM 1024
 #define SUBSECTION_SIZE SECTION_SIZE / BLOCK_DIM
 
@@ -78,15 +78,10 @@ __global__ void efficient_Kogge_Stone_scan_kernel(float *X, float *Y, int InputS
 	__syncthreads();
 
 
-	// store the results into the correct positions of XY
-	XY[threadIdx.x * (SUBSECTION_SIZE)+(SUBSECTION_SIZE)-1] = AUS[threadIdx.x];
-	__syncthreads();
-
-
 	// PHASE 3: each thread adds to its elements the new value of the last element of its predecessor's section
 	if (threadIdx.x > 0) {
 		for (unsigned int stride = 0; stride < (SUBSECTION_SIZE)-1; stride++) {
-			XY[threadIdx.x * (SUBSECTION_SIZE)+stride] += XY[(threadIdx.x - 1) * (SUBSECTION_SIZE)+(SUBSECTION_SIZE)-1];  // <-- 
+			XY[threadIdx.x * (SUBSECTION_SIZE)+stride] += AUS[threadIdx.x - 1];  // <--
 		}
 	}
 	__syncthreads();
@@ -104,7 +99,7 @@ __global__ void efficient_Kogge_Stone_scan_kernel(float *X, float *Y, int InputS
 ////////////////////////////////////////////////////////////////////////////////
 int main()
 {
-	const int arraySize = 8192;
+	const int arraySize = 4096;
 	float *Y, *YS, *X;
 	//float X[arraySize] = { 2,1,3,1,0,4,1,2,0,3,1,2,5,3,1,2 };
 	float msTime, msTime_seq;
