@@ -11,11 +11,6 @@
 #include <stdlib.h>
 #include <math.h>
 
-#pragma once
-#ifdef __INTELLISENSE__
-void __syncthreads();
-#endif
-
 //Assumption: the number of threads will be equal to section elements
 #define SECTION_SIZE 32
 
@@ -48,12 +43,9 @@ __global__ void Kogge_Stone_scan_kernel(float *X, float *Y, int InputSize)
 		for (unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
 			if (threadIdx.x >= stride) {
 				__syncthreads();
-				float in = XY[threadIdx.x - stride];
-				__syncthreads();
-				XY[threadIdx.x] += in;
+				XY[threadIdx.x] += XY[threadIdx.x - stride];
 			}
 		}
-		__syncthreads();
 		Y[i] = XY[threadIdx.x];
 	}
 }
@@ -67,7 +59,6 @@ int main()
 	float X[arraySize] = { 3, 1, 7, 0, 4, 1, 6, 3 };
 	float Y[arraySize];
 	float YS[arraySize];
-
 
 
 	//printf("Array input: ");

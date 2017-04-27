@@ -11,15 +11,10 @@
 #include <stdlib.h>
 #include <math.h>
 
-#pragma once
-#ifdef __INTELLISENSE__
-void __syncthreads();
-#endif
+//The maximum number of threads is of section elements
+#define SECTION_SIZE 2048
 
-//Assumption: the number of threads will be equal to section elements
-#define SECTION_SIZE 32
-
-cudaError_t Brent_Kung_scan(float *X, float *Y, unsigned int size);
+cudaError_t Brent_Kung_scan(float *X, float *Y, unsigned int size, float *msTime);
 void sequential_scan(float *x, float *y, int Max_i);
 void print_Array(float *A, int size);
 int verify_result(float *Y, float *YS, int size);
@@ -63,30 +58,48 @@ __global__ void Brent_Kung_scan_kernel(float *X, float *Y, int InputSize)
 ////////////////////////////////////////////////////////////////////////////////
 int main()
 {
-	const int arraySize = 8;
-	float X[arraySize] = { 3, 1, 7, 0, 4, 1, 6, 3 };
-	float Y[arraySize];
-	float YS[arraySize];
+	const int arraySize = 2048;
+	float *Y, *YS, *X;
+	//float X[arraySize] = { 2,1,3,1,0,4,1,2,0,3,1,2,5,3,1,2 };
+	float msTime, msTime_seq;
+	cudaEvent_t startTimeCuda, stopTimeCuda;
+	cudaEventCreate(&startTimeCuda);
+	cudaEventCreate(&stopTimeCuda);
 
+	X = (float*)malloc(arraySize * sizeof(float));
+	Y = (float*)malloc(arraySize * sizeof(float));
+	YS = (float*)malloc(arraySize * sizeof(float));
 
+	//fill input vector
+	for (int i = 0; i < arraySize; i++) {
+		X[i] = (float)(i + 1.0);
+	}
 
 	//printf("Array input: ");
 	//print_Array(X, arraySize);
 
 	// ------------------ Perform sequential scan. -----------------------------
-	printf("Sequential scan...");
+	printf("Sequential scan...\n");
+	cudaEventRecord(startTimeCuda, 0);
+	cudaEventSynchronize(startTimeCuda);
+
 	sequential_scan(X, YS, arraySize);
-	printf(" OK!\n");
+
+	cudaEventRecord(stopTimeCuda, 0);
+	cudaEventSynchronize(stopTimeCuda);
+	cudaEventElapsedTime(&msTime_seq, startTimeCuda, stopTimeCuda);
+	printf("HostTime: %f\n\n", msTime_seq);
+	//printf(" OK!\n");
 	//print_Array(YS, arraySize);
 
 	// ------------------ perform parallel scan. -------------------------------
-	printf("Parallel scan...");
-	cudaError_t cudaStatus = Brent_Kung_scan(X, Y, arraySize);
+	printf("Parallel scan...\n");
+	cudaError_t cudaStatus = Brent_Kung_scan(X, Y, arraySize, &msTime);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "addWithCuda failed!");
 		goto Error;
 	}
-	printf(" OK!\n");
+	//printf(" OK!\n");
 	//print_Array(Y, arraySize);
 
 	// ------------------ verify the result. -----------------------------------
@@ -103,12 +116,20 @@ int main()
 		goto Error;
 	}
 
+	printf("Speedup: %f\n", msTime_seq / msTime);
+
+	free(X);
+	free(Y);
+	free(YS);
 #ifdef WIN32
 	system("pause");
 #endif // WIN32
 	return 0;
 
 Error:
+	free(X);
+	free(Y);
+	free(YS);
 #ifdef WIN32
 	system("pause");
 #endif // WIN32
@@ -116,10 +137,13 @@ Error:
 }
 
 // Helper function for using CUDA to perform scan in parallel.
-cudaError_t Brent_Kung_scan(float *X, float *Y, unsigned int size)
+cudaError_t Brent_Kung_scan(float *X, float *Y, unsigned int size, float *msTime)
 {
 	float *dev_X, *dev_Y;
 	cudaError_t cudaStatus;
+	cudaEvent_t startTimeCuda, stopTimeCuda;
+	cudaEventCreate(&startTimeCuda);
+	cudaEventCreate(&stopTimeCuda);
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
 	cudaStatus = cudaSetDevice(0);
@@ -149,9 +173,15 @@ cudaError_t Brent_Kung_scan(float *X, float *Y, unsigned int size)
 	}
 
 	// Launch a kernel on the GPU with one thread for each element.
-	dim3 dimGrid(ceil(size / float(SECTION_SIZE)), 1, 1);
-	dim3 dimBlock(SECTION_SIZE, 1, 1);
-	Brent_Kung_scan_kernel << <dimGrid, dimBlock >> >(dev_X, dev_Y, size);
+	cudaEventRecord(startTimeCuda, 0);
+	cudaEventSynchronize(startTimeCuda);
+
+	Brent_Kung_scan_kernel << < 1, SECTION_SIZE/2 >> >(dev_X, dev_Y, size);
+
+	cudaEventRecord(stopTimeCuda, 0);
+	cudaEventSynchronize(stopTimeCuda);
+	cudaEventElapsedTime(msTime, startTimeCuda, stopTimeCuda);
+	printf("KernelTime: %f\n\n", *msTime);
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
