@@ -6,8 +6,10 @@
 //	threads then the number of the elements in a section. The maximal size
 //	of a section is no longer limited by the number of threads in the block
 //	but rather, the size of shared memory; all elements in a section
-//	muist to fit into the shared memory.
+//	must to fit into the shared memory.
 //
+////////////////////////////////////////////////////////////////////////////
+//	With 8192 elements using float numbers there are approximation problems 
 ////////////////////////////////////////////////////////////////////////////
 
 #include "cuda_runtime.h"
