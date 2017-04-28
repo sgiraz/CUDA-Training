@@ -82,7 +82,7 @@ __global__ void efficient_Kogge_Stone_scan_kernel(float *X, float *Y, int InputS
 
 	// PHASE 3: each thread adds to its elements the new value of the last element of its predecessor's section
 	if (threadIdx.x > 0) {
-		for (unsigned int stride = 0; stride < (SUBSECTION_SIZE)-1; stride++) {
+		for (unsigned int stride = 0; stride < (SUBSECTION_SIZE); stride++) {
 			XY[threadIdx.x * (SUBSECTION_SIZE)+stride] += AUS[threadIdx.x - 1];  // <--
 		}
 	}
