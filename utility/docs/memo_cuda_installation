@@ -1,0 +1,14 @@
+ The version of the kernel your system is running can be found by running the following command:
+
+$ uname -r
+
+This is the version of the kernel headers and development packages that must be installed prior to installing the CUDA Drivers. This command will be used multiple times below to specify the version of the packages to install. Note that below are the common-case scenarios for kernel usage. More advanced cases, such as custom kernel branches, should ensure that their kernel headers and sources match the kernel build they are running.
+Note: If you perform a system update which changes the version of the linux kernel being used, make sure to rerun the commands below to ensure you have the correct kernel headers and kernel development packages installed. Otherwise, the CUDA Driver will fail to work with the new kernel. 
+
+
+Ubuntu
+The kernel headers and development packages for the currently running kernel can be installed with:
+
+$ sudo apt-get install linux-headers-$(uname -r)
+
+
